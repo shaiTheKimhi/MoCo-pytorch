@@ -23,18 +23,23 @@ NUM_CHANNELS = 3
 
 def get_statistics(dataset):
     bs = 1 #batch size
-    marr = torch.zeros(5, NUM_CHANNELS) #3 is channels number
-    stdarr = torch.zeros(5, NUM_CHANNELS)
-    for idx in range(5): #len(dataset)/ bs 
+    n =  25#len(dataset)
+    marr = torch.zeros(n, NUM_CHANNELS) #3 is channels number
+    stdarr = torch.zeros(n, NUM_CHANNELS)
+    for idx in range(int(n / bs)):  
         image = dataset[idx*bs: (idx+1)*bs][0].to(device) #could also calculate throught cuda
-        m = torch.tensor([torch.mean(image.permute(1 ,0 , 2, 3)[i]) for i in range(NUM_CHANNELS)])
-        std = torch.tensor([torch.std(image.permute(1 ,0 , 2, 3)[i]) for i in range(NUM_CHANNELS)])
+        if bs > 1:
+            m = torch.tensor([torch.mean(image.permute(1 ,0 , 2, 3)[i]) for i in range(NUM_CHANNELS)])
+            std = torch.tensor([torch.std(image.permute(1 ,0 , 2, 3)[i]) for i in range(NUM_CHANNELS)])
+        else:
+            m = torch.tensor([torch.mean(image[i]) for i in range(NUM_CHANNELS)])
+            std = torch.tensor([torch.std(image[i]) for i in range(NUM_CHANNELS)])
         for i in range(NUM_CHANNELS):
-            marr[i] += m[i]
-            stdarr[i] += std[i]
+            marr[idx][i] += m[i]
+            stdarr[idx][i] += std[i]
         #m = torch(
         #std = torch
-    return marr
+    return [torch.mean(marr.T[i]) for i in range(NUM_CHANNELS)], [torch.mean(stdarr.T[i]) for i in range(NUM_CHANNELS)]
         
            
            
@@ -77,8 +82,8 @@ class ImagenetteDataset(torch.utils.data.Dataset):
                 image_path = os.path.join(self.path, self.images_path[i])
                 label = classes[self.images_path[i].split('/')[1]]
                 image = Image.open(image_path).convert('RGB')
-                batch[i] += self.transform(image)
-                labels[i] += label
+                batch[i - start] += self.transform(image)
+                labels[i - start] += label
             return batch, labels       
         
         

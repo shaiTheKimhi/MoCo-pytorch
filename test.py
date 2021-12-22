@@ -25,9 +25,9 @@ print(device)
 
 dataset = datasetclass(r"C:\Users\Admin\Documents\Technion\Tutorials\Advance Deep Learning\hw\imagenette2")
 
-img = dataset[0:1][0]
+img = dataset[4][0]
 
-print(img.shape)
+print(img.shape) #should be (3,244,244)
 
 print(get_statistics(dataset))
 
