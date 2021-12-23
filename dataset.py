@@ -5,7 +5,7 @@ import torch
 import os
 import torchvision
 from torchvision import transforms
-
+import numpy as np
 import torch
 
 import albumentations
@@ -52,28 +52,35 @@ def get_statistics(dataset):
 
    
 
-functions = [augments.Blur, augments.GaussianBlur, augments.ChannelDropout, augments.ChannelShuffle, augments.ColorJitter, augments.CLAHE, augments.CoarseDropout\
-    , augments.Cutout, augments.Equalize, augments.GaussNoise, augments.FancyPCA, augments.Flip, ]
+functions = [augments.Blur, augments.GaussianBlur, augments.ChannelShuffle, augments.ColorJitter, augments.CoarseDropout\
+    , augments.Cutout, augments.GaussNoise, augments.Flip, augments.HueSaturationValue, augments.RandomBrightnessContrast,
+     augments.RandomFog, augments.RandomShadow, augments.RandomRain, augments.VerticalFlip, augments.Sharpen] #, augments.ChannelDropout, 
+     # augments.CLAHE, augments.Equalize, augments.FancyPCA (requires integer type),
 
 #TODO: add augmentation classes
-class Augmentations():
-    def __init__(self, types = None, normalization = ()):
+class Augmentations:
+    def __init__(self, types = None, normalization = None):
         self.types = types
         self.normalization = normalization
-    def augment(self, image, probs, k):
+    def augment(self, image, probs=None, k=1):
         '''
         this function returns the image after applying random augmentations
         image - the image to augment
         probs - list of probability factors determining which augmentation to pick (parameters are picked randomly independantly)
         k - number of augmentations to pick and implement
         '''
-        transformed = image
+        transformed = np.ascontiguousarray(image.permute(1,2,0).numpy())
+        n = len(functions)
+        probs = torch.tensor([1/n for i in range(n)]) if probs is None else probs
         c = torch.distributions.Categorical(probs)
         for i in range(k):
-            f = functions[c.sample().item()]() #this uses default parameters for random augmentations
-            transformed = f(transformed)
+            f = functions[c.sample().item()](always_apply=True) #this uses default parameters for random augmentations
+            print(f)
+            transformed = f(image = transformed)['image']
+
             #self.apply(image, c.sample().item())
-        return transformed
+        return transforms.ToTensor()(transformed)
+
 
     def apply(self, image, augmentation_num):
         '''
@@ -99,10 +106,15 @@ class Augmentations():
 
 
 class ImagenetteDataset(torch.utils.data.Dataset):
-    def __init__(self, path, crop_size=224, train=True, augment=2, normalize = True, label_index=1):#TODO: check crop_size, train and augment
+    def __init__(self, path, crop_size=224, train=True, augment=2, normalize = True, label_index=1, num_augmentations = 1):#TODO: check crop_size, train and augment
         self.crop_size = crop_size
         self.augment = augment
-        self.normalize = normalize
+        self.mean = DATABASE_MEAN if normalize else [0,0,0]
+        self.std = DATABASE_STD if normalize else [1,1,1] 
+        self.k = num_augmentations
+
+        if augment: #not zero
+            self.augmentor = Augmentations() #CAN CHECK: if to crop image before augmentation, right now it will be after
         
         #TODO: split the dataset to train and validation sets, store them in self.train_set, self.valid_set
 
@@ -151,22 +163,21 @@ class ImagenetteDataset(torch.utils.data.Dataset):
         return len(self.images_path)
         
     def transform(self, image): 
-        m = [0, 0, 0]
-        s = [0, 0, 0]
-        if self.normalize:
-            m = DATABASE_MEAN
-            s = DATABASE_STD
-        if self.augment == 2:
-            nop = 0 #TODO: implement augmentations on the image here, augment to q,k 
-        if self.augment == 1:
-            nop = 0 #TODO: implement augmentation once, and return the original image as well
-        
-        #No augmentations example
         tran = torchvision.transforms.Compose([transforms.Resize(self.crop_size),
-                                                  transforms.CenterCrop(self.crop_size),
-                                                  transforms.ToTensor(),
-                                                  transforms.Normalize(mean=m, std=s)
-                                                 ])
+                transforms.CenterCrop(self.crop_size),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=self.mean, std=self.std)])
+        if self.augment == 0:
+            return tran(image), torch.zeros(1)
+        img = torchvision.transforms.Compose([transforms.ToTensor()])(image)
+        if self.augment == 2:
+            q = self.augmentor.augment(img, k=self.k)
+            k = self.augmentor.augment(img, k=self.k)
+            return tran(q), tran(k)
+        elif self.augment == 1:
+            return tran(image), tran(transforms.ToPILImage()(self.augmentor.augment(img, k=self.k)))
+        
+
         #transforms.Normalize(mean=[0.485, 0.456, 0.406], ImageNet statistics
         #std=[0.229, 0.224, 0.225])
         #([tensor(0.4661), tensor(0.4581), tensor(0.4292)], [tensor(0.2382), tensor(0.2315), tensor(0.2394)]) imagenette statistics
