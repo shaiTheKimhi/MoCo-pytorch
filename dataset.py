@@ -7,7 +7,7 @@ import torchvision
 from torchvision import transforms
 import numpy as np
 import torch
-
+import random
 import albumentations
 
 from albumentations.augmentations import transforms as augments
@@ -24,13 +24,21 @@ classes = {'n01440764': 0,
            'n03425413': 7,
            'n03445777': 8,
            'n03888257': 9}
-NUM_CHANNELS = 3
-DATABASE_MEAN =  [0.4661, 0.4581, 0.4292] #Imagenette statistics slightly differ from ImageNet's
-DATABASE_STD =  [0.2382, 0.2315, 0.2394]
 
+
+NUM_CHANNELS = 3
+
+#Imagenette statistics slightly differ from ImageNet's
+DATABASE_MEAN = [0.4661, 0.4581, 0.4292]
+DATABASE_STD = [0.2382, 0.2315, 0.2394]
 
 
 def get_statistics(dataset):
+    """
+    normelize the DS by the statistics (sslighly diffrent then imagenet)
+    :param dataset:
+    :return:
+    """
     bs = 1 #batch size
     n =  len(dataset)
     marr = torch.zeros(n, NUM_CHANNELS) #3 is channels number
@@ -77,92 +85,141 @@ class Augmentations:
             f = functions[c.sample().item()](always_apply=True) #this uses default parameters for random augmentations
             print(f)
             transformed = f(image = transformed)['image']
-
             #self.apply(image, c.sample().item())
         return transforms.ToTensor()(transformed)
 
 
-    def apply(self, image, augmentation_num):
-        '''
-        applies the given augmentation
-        '''
-        if augmentation_num == 1: #Blur
-            blur_limit = torch.radnint(3,10, (1,)).item()
-            f = functions[augmentation_num](blur_limt=blur_limit)
-            return f(image)
-        elif augmentation_num == 2: #GaussianBlur
-            #will use default std (CAN CHANGE THIS)
-            blur_limit = (torch.radnint(3,10, (1,)).item(), torch.radnint(3,10, (1,)).item())
-            f = functions[augmentation_num](blur_limt=blur_limit) #sigma_limit = torch.rand(1).item() * 5
-            return f(image)
-        elif augmentation_num == 3: #Channel Dropout
-            pass
-        pass
 
 
+#todo: delete
+class create_GaussianBlur():
+    def __init__(self, k_size, sigma_blur, channels):
+        self.k_size = k_size
+        self.sigma_blur = sigma_blur
+        self.channels = channels
 
-            
+        # Create a x, y coordinate grid of shape (kernel_size, kernel_size, 2)
+        x_cord = torch.arange(k_size)
+        x_grid = x_cord.repeat(k_size).view(k_size, k_size)
+        y_grid = x_grid.t()
+        xy_grid = torch.stack([x_grid, y_grid], dim=-1)
+
+        mean = (k_size - 1) / 2.
+        variance = sigma_blur ** 2.
+
+        pi = 3.14
+        gaussian_kernel = (1. / (2. * pi * variance)) * torch.exp(
+            -torch.sum((xy_grid - mean) ** 2., dim=-1) / (2 * variance))
+        # Make sure sum of values in gaussian kernel equals 1.
+        gaussian_kernel = gaussian_kernel / torch.sum(gaussian_kernel)
+
+        # Reshape to 2d depthwise convolutional weight
+        gaussian_kernel = gaussian_kernel.view(1, 1, k_size, k_size)
+        gaussian_kernel = gaussian_kernel.repeat(channels, 1, 1, 1)
+
+        gaussian_filter = torch.nn.Conv2d(in_channels=channels, out_channels=channels,
+                                          kernel_size=k_size, groups=channels, bias=False)
+
+        gaussian_filter.weight.data = gaussian_kernel
+        gaussian_filter.weight.requires_grad = False
+        self.gaussian_filter = gaussian_filter
+
+    def __call__(self, img):
+        to_PIL = transforms.ToPILImage()
+        to_tensor = transforms.ToTensor()
+
+        img_tensor = to_tensor(img)
+        if len(img_tensor.shape) == 2:  # if gray turn to rgb
+            img_tensor = img_tensor.unsqueeze_(0).repeat(1, 1, 3)
+        img_tensor = img_tensor.unsqueeze(0)
+        img_tensor_filtered = self.gaussian_filter(img_tensor)
+        img_tensor_filtered = img_tensor_filtered.squeeze()
+        img_PIL = to_PIL(img_tensor_filtered)
+        return img_PIL
+
+
+#todo: delete
+def augment_images(img, crop_width):
+    sigma_boundries = [0.1, 2]
+    sigma = random.uniform(sigma_boundries[0], sigma_boundries[1])
+    kernel_size = 5
+
+    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+
+    augment_transformation = transforms.Compose([
+        transforms.RandomResizedCrop(crop_width, scale=(0.2, 1.)),
+        transforms.RandomGrayscale(p=0.2),
+        transforms.ColorJitter(0.4, 0.4, 0.4, 0.4),
+        transforms.RandomHorizontalFlip(),
+        create_GaussianBlur(kernel_size, sigma, 3),
+        transforms.ToTensor(),
+        normalize, ])
+
+    augmented_image = augment_transformation(img)
+    return augmented_image
 
 
 
 class ImagenetteDataset(torch.utils.data.Dataset):
-    def __init__(self, path, crop_size=224, train=True, augment=2, normalize = True, label_index=1, num_augmentations = 1):#TODO: check crop_size, train and augment
+    def __init__(self, path, crop_size=299, train=True, augment=2, normalize=True, num_augmentations=1):
+        """
+        create dataset
+        :param path: dataset path
+        :param crop_size: like optimal for imagenet, can also be 224 for other models
+        :param train: True for train DS
+        :param augment:0/1/2
+        :param normalize: norm with ds statistics
+        :param num_augmentations:
+        """
+        self.train=train
         self.crop_size = crop_size
         self.augment = augment
         self.mean = DATABASE_MEAN if normalize else [0,0,0]
         self.std = DATABASE_STD if normalize else [1,1,1] 
         self.k = num_augmentations
-
         if augment: #not zero
-            self.augmentor = Augmentations() #CAN CHECK: if to crop image before augmentation, right now it will be after
-        
-        #TODO: split the dataset to train and validation sets, store them in self.train_set, self.valid_set
+            self.augmentor = Augmentations()
+        self.classes = [i for i in range(10)]
 
-        self.labels = label_index
+        #load the dataset from dir
         csv_path = os.path.join(path, 'noisy_imagenette.csv')
         csv_file = pd.read_csv(csv_path)
         self.path = path
-        self.images_path = csv_file['path'].values.tolist()
-        
+        all_paths = csv_file['path'].values.tolist()
+
+        if self.train:
+            im_path = [cur_path for cur_path in all_paths if cur_path.split('/')[0] == 'train']
+        else:
+            im_path = [cur_path for cur_path in all_paths if cur_path.split('/')[0] == 'val']
+        self.im_path = im_path
+        self.labels = [classes[self.path_list[i].split('/')[1]] for i in range(len(self.im_path))]
+
     def __getitem__(self, index):
-        if type(index) is int:
-            image_path = os.path.join(self.path, self.images_path[index])
-            label = torch.tensor(classes[self.images_path[index].split('/')[1]])
-            image = Image.open(image_path).convert('RGB')
-            transformed = self.transform(image)
-            return transformed[0], transformed[1], label 
-        elif type(index) is slice:
-            step = index.step if index.step is not None else 1
-            stop = index.stop if index.stop is not None else len(self)
-            start = index.start if index.start is not None else 0 
-            if step == 0:
-                raise ZeroDivisionError()
-            bs = int((stop - start)/step)
-            if bs == 1:
-                image_path = os.path.join(self.path, self.images_path[start])
-                label = torch.tensor(classes[self.images_path[start].split('/')[1]])
-                image = Image.open(image_path).convert('RGB')
-                transformed = self.transform(image)
-                return transformed[0], transformed[1], label 
-            else:
-                batch = torch.zeros(2, bs, NUM_CHANNELS, self.crop_size, self.crop_size) #2- two images for a case of augmentation
-            labels = torch.zeros(bs)
-            for i in range(start, stop, step):
-                image_path = os.path.join(self.path, self.images_path[i])
-                label = classes[self.images_path[i].split('/')[1]]
-                image = Image.open(image_path).convert('RGB')
-                transformed = self.transform(image)
-                batch[i - start][0] += transformed[0]
-                batch[i - start][1] += transformed[1]
-                labels[i - start] += label
-            return batch[0], batch[1], labels       
-        
-        
-        
+
+        image_path = os.path.join(self.path, self.im_path[index])
+        label = torch.tensor(classes[self.im_path[index].split('/')[1]])
+        #label = self.labels[i]
+        image = Image.open(image_path).convert('RGB')
+
+        #todo: use shai self.transform()
+        if self.augment:
+            q_batch = augment_images(image, self.crop_size)
+            k_batch = augment_images(image, self.crop_size)
+            return q_batch, k_batch, label
+        else:
+            image_transform = transforms.Compose([transforms.Resize(self.crop_size),
+                                                  transforms.CenterCrop(self.crop_size),
+                                                  transforms.ToTensor(),
+                                                  transforms.Normalize(mean=DATABASE_MEAN,
+                                                                       std=DATABASE_STD)])
+            return image_transform(image), np.zeros((1)), label
+        #transformed = self.transform(image)
+        #return transformed[0], transformed[1], label
+
     def __len__(self):
-        return len(self.images_path)
+        return len(self.im_path)
         
-    def transform(self, image): 
+    def transform(self, image):
         tran = torchvision.transforms.Compose([transforms.Resize(self.crop_size),
                 transforms.CenterCrop(self.crop_size),
                 transforms.ToTensor(),
@@ -176,10 +233,3 @@ class ImagenetteDataset(torch.utils.data.Dataset):
             return tran(q), tran(k)
         elif self.augment == 1:
             return tran(image), tran(transforms.ToPILImage()(self.augmentor.augment(img, k=self.k)))
-        
-
-        #transforms.Normalize(mean=[0.485, 0.456, 0.406], ImageNet statistics
-        #std=[0.229, 0.224, 0.225])
-        #([tensor(0.4661), tensor(0.4581), tensor(0.4292)], [tensor(0.2382), tensor(0.2315), tensor(0.2394)]) imagenette statistics
-        
-        return tran(image), torch.zeros(1)
