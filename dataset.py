@@ -1,5 +1,4 @@
 from PIL import Image
-from albumentations.augmentations.functional import channel_shuffle
 import pandas as pd
 import torch
 import os
@@ -8,8 +7,8 @@ from torchvision import transforms
 import numpy as np
 import torch
 import random
-import albumentations
 
+import albumentations
 from albumentations.augmentations import transforms as augments
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
