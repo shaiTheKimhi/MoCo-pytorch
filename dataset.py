@@ -88,8 +88,6 @@ class Augmentations:
         return transforms.ToTensor()(transformed)
 
 
-
-
 #todo: delete
 class create_GaussianBlur():
     def __init__(self, k_size, sigma_blur, channels):
@@ -175,7 +173,7 @@ class ImagenetteDataset(torch.utils.data.Dataset):
         self.augment = augment
         self.mean = DATABASE_MEAN if normalize else [0,0,0]
         self.std = DATABASE_STD if normalize else [1,1,1] 
-        self.k = num_augmentations
+        self.n_aug = num_augmentations #todo: delete and use lower probabilities
         if augment: #not zero
             self.augmentor = Augmentations()
         self.classes = [i for i in range(10)]
@@ -200,11 +198,20 @@ class ImagenetteDataset(torch.utils.data.Dataset):
         #label = self.labels[i]
         image = Image.open(image_path).convert('RGB')
 
-        #todo: use shai self.transform()
-        if self.augment:
-            q_batch = augment_images(image, self.crop_size)
-            k_batch = augment_images(image, self.crop_size)
-            return q_batch, k_batch, label
+        #todo: use shai self.transform(), by changing the compose....
+        #assert self.augment in [0,1,2]
+        if self.augment == 2:
+            q = augment_images(image, self.crop_size)
+            k = augment_images(image, self.crop_size)
+            return q, k, label
+        elif self.augment == 1:
+            image_transform = transforms.Compose([transforms.Resize(self.crop_size),
+                                                  transforms.CenterCrop(self.crop_size),
+                                                  transforms.ToTensor(),
+                                                  transforms.Normalize(mean=DATABASE_MEAN,
+                                                                       std=DATABASE_STD)])
+            k = augment_images(image, self.crop_size)
+            return image_transform(image),k
         else:
             image_transform = transforms.Compose([transforms.Resize(self.crop_size),
                                                   transforms.CenterCrop(self.crop_size),
@@ -227,8 +234,8 @@ class ImagenetteDataset(torch.utils.data.Dataset):
             return tran(image), torch.zeros(1)
         img = torchvision.transforms.Compose([transforms.ToTensor()])(image)
         if self.augment == 2:
-            q = self.augmentor.augment(img, k=self.k)
-            k = self.augmentor.augment(img, k=self.k)
+            q = self.augmentor.augment(img, k=self.n_aug)
+            k = self.augmentor.augment(img, k=self.n_aug)
             return tran(q), tran(k)
         elif self.augment == 1:
-            return tran(image), tran(transforms.ToPILImage()(self.augmentor.augment(img, k=self.k)))
+            return tran(image), tran(transforms.ToPILImage()(self.augmentor.augment(img, k=self.n_aug)))
