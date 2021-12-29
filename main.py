@@ -122,21 +122,21 @@ def main():
 
             tot_samples += k_emb_b.shape[0]
             tot_loss += loss.item() * k_emb_b.shape[0]
-            bar.set_description(f'Train Epoch: [{epoch+1}/{max_epochs}] Loss: {tot_loss / tot_samples}')
+            bar.set_description(f'Train Epoch: [{epoch+1}/{epochs}] Loss: {tot_loss / tot_samples}')
 
         epoch_loss = np.mean(avg_loss)
         loss_list.append(epoch_loss)
 
         torch.save({
             'epoch': epoch,
-            'model_state_dict': f_q.state_dict(),
+            'model_state_dict': Q_enc.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
             'loss': epoch_loss,
             }, res_path + '/moco_checkpoint_fq.pt')
 
         torch.save({
             'epoch': epoch,
-            'model_state_dict': f_k.state_dict(),
+            'model_state_dict': K_enc.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
             'loss': epoch_loss,
             }, res_path + '/moco_checkpoint_fk.pt')
