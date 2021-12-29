@@ -16,7 +16,7 @@ from moco_model import MOCO
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-data_path = '../imagenette2/imagenette2/'
+data_path = '../imagenette2/'
 #data_path = os.path.join('..','imagenette2','imagenette2')
 
 current_time = datetime.now().strftime("%H_%M_%S")
@@ -41,13 +41,13 @@ def main():
     #todo: check with defult crop_size(299)
     #moshe: if implement distributed training, remember to change shuffle...
 
-    train_ds = ImagenetteDataset(data_path, crops_size=112, train=True, augment=2)
+    train_ds = ImagenetteDataset(data_path, crop_size=112, train=True, augment=2)
     train_loader = torch.utils.data.DataLoader(train_ds,batch_size=batch_size, shuffle=True)
 
-    mem_ds = ImagenetteDataset(data_path, crops_size=112, train=True, augment=0) #moshe: need augment=1?
+    mem_ds = ImagenetteDataset(data_path, crop_size=112, train=True, augment=0) #moshe: need augment=1? shai: this dataset is never used, why?
     mem_loader = torch.utils.data.DataLoader(mem_ds, batch_size=batch_size, shuffle=False)
 
-    val_ds = ImagenetteDataset(data_path, crops_size=112, train=False, augment=0)
+    val_ds = ImagenetteDataset(data_path, crop_size=112, train=False, augment=0)
     val_loader = torch.utils.data.DataLoader(val_ds, batch_size=batch_size, shuffle=False)
 
     # Model
@@ -82,8 +82,8 @@ def main():
         bar = tqdm(train_loader)
 
         i, tot_loss, tot_samples = 0, 0.0, 0
-        labels = torch.zeros(b_size, dtype=torch.int64).to(device)
-        for q_batch, k_batch, _ in bar:
+        #labels = torch.zeros(b_size, dtype=torch.int64).to(device)
+        for q_batch, k_batch, labels in bar:
 
             optimizer.zero_grad()
             q_batch, k_batch = q_batch.to(device), k_batch.to(device)
@@ -100,6 +100,8 @@ def main():
             l_pos = torch.bmm(q_emb_b.view(b_size, 1, f_size), k_emb_b.view(b_size, f_size, 1))
             l_neg = torch.mm(q_emb_b.view(b_size, f_size), queue)
             logits = torch.cat([l_pos.view(-1, 1), l_neg], dim=1)/T
+
+            labels = torch.zeros(b_size, dtype=torch.int64).to(device)
 
             loss = loss_func(logits, labels)
             avg_loss.append(loss.item())

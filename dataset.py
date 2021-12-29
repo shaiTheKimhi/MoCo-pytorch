@@ -189,7 +189,7 @@ class ImagenetteDataset(torch.utils.data.Dataset):
         else:
             im_path = [cur_path for cur_path in all_paths if cur_path.split('/')[0] == 'val']
         self.im_path = im_path
-        self.labels = [classes[self.path_list[i].split('/')[1]] for i in range(len(self.im_path))]
+        self.labels = [classes[self.im_path[i].split('/')[1]] for i in range(len(self.im_path))]
 
     def __getitem__(self, index):
 
@@ -211,7 +211,7 @@ class ImagenetteDataset(torch.utils.data.Dataset):
                                                   transforms.Normalize(mean=DATABASE_MEAN,
                                                                        std=DATABASE_STD)])
             k = augment_images(image, self.crop_size)
-            return image_transform(image),k
+            return image_transform(image),k, label
         else:
             image_transform = transforms.Compose([transforms.Resize(self.crop_size),
                                                   transforms.CenterCrop(self.crop_size),
