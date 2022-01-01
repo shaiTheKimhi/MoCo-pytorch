@@ -25,7 +25,7 @@ os.makedirs(res_path, exist_ok=True)
 
 def main():
 
-    start_epoch,epochs =0, 1000
+    start_epoch,epochs =0, 10
     print_every = 50
     q_size = 4096
     batch_size = 256
@@ -84,7 +84,6 @@ def main():
         i, tot_loss, tot_samples = 0, 0.0, 0
         #labels = torch.zeros(b_size, dtype=torch.int64).to(device)
         for q_batch, k_batch, labels in bar:
-
             optimizer.zero_grad()
             q_batch, k_batch = q_batch.to(device), k_batch.to(device)
 
@@ -116,15 +115,15 @@ def main():
             queue = torch.cat([queue, k_emb_b.T], dim=1).to(device)
             queue = queue[:, k_emb_b.T.shape[1]:]
 
-            #   Save status
-            epoch_log = "Epoch: "+str(epoch+1)+", Iter: "+str(i+1)+', Loss: '+str(loss.item())
-            if i % print_every ==0:
-                print(epoch_log)
-            f.write(epoch_log + '\n')
+        #   Save status
+        epoch_log = "Epoch: "+str(epoch+1)+", Iter: "+str(i+1)+', Loss: '+str(loss.item())
+        if i % print_every ==0:
+            print(epoch_log)
+        f.write(epoch_log + '\n')
 
-            tot_samples += k_emb_b.shape[0]
-            tot_loss += loss.item() * k_emb_b.shape[0]
-            bar.set_description(f'Train Epoch: [{epoch+1}/{epochs}] Loss: {tot_loss / tot_samples}')
+        tot_samples += k_emb_b.shape[0]
+        tot_loss += loss.item() * k_emb_b.shape[0]
+        bar.set_description(f'Train Epoch: [{epoch+1}/{epochs}] Loss: {tot_loss / tot_samples}')
 
         epoch_loss = np.mean(avg_loss)
         loss_list.append(epoch_loss)
