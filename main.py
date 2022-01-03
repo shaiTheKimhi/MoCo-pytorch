@@ -13,6 +13,9 @@ import os
 
 from dataset import ImagenetteDataset
 from moco_model import MOCO
+from image_clf import *
+
+import json 
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -25,7 +28,7 @@ os.makedirs(res_path, exist_ok=True)
 
 def main():
 
-    start_epoch,epochs =0, 10
+    start_epoch,epochs =0, 1000
     print_every = 50
     q_size = 4096
     batch_size = 256
@@ -44,8 +47,8 @@ def main():
     train_ds = ImagenetteDataset(data_path, crop_size=112, train=True, augment=2)
     train_loader = torch.utils.data.DataLoader(train_ds,batch_size=batch_size, shuffle=True)
 
-    mem_ds = ImagenetteDataset(data_path, crop_size=112, train=True, augment=0) #moshe: need augment=1? shai: this dataset is never used, why?
-    mem_loader = torch.utils.data.DataLoader(mem_ds, batch_size=batch_size, shuffle=False)
+    #mem_ds = ImagenetteDataset(data_path, crop_size=112, train=True, augment=0) #moshe: need augment=1? shai: this dataset is never used, why?
+    #mem_loader = torch.utils.data.DataLoader(mem_ds, batch_size=batch_size, shuffle=False)
 
     val_ds = ImagenetteDataset(data_path, crop_size=112, train=False, augment=0)
     val_loader = torch.utils.data.DataLoader(val_ds, batch_size=batch_size, shuffle=False)
@@ -71,7 +74,7 @@ def main():
     queue = F.normalize(torch.randn(128, q_size), dim=0).to(device)
 
     #   log file
-    f = open(res_path + '/moco_log.txt', "a")
+    f = open(res_path + '/moco_log.txt', "a+")
 
     for epoch in range(start_epoch,epochs):
         # Training
@@ -117,8 +120,7 @@ def main():
 
         #   Save status
         epoch_log = "Epoch: "+str(epoch+1)+", Iter: "+str(i+1)+', Loss: '+str(loss.item())
-        if i % print_every ==0:
-            print(epoch_log)
+        print(epoch_log)
         f.write(epoch_log + '\n')
 
         tot_samples += k_emb_b.shape[0]
@@ -145,14 +147,46 @@ def main():
     f.close()
     print_losses(loss_list)
 
-def print_losses(loss_list):
+def print_losses(loss_list, graph_name='moco_loss_path'):
     plt.figure()
     plt.plot(np.array(loss_list))
     plt.title('MoCo Training Loss')
     plt.xlabel('Epoch')
     plt.ylabel('Loss')
-    plt.savefig(res_path + '/moco_loss_graph.png')
+    plt.savefig(res_path + '/' + graph_name +'.png')
+
+def train_classifier():
+    epochs = 20
+    batch_size = 64
+    # for gamble softmax
+    T = 0.07
+    # optimizer
+    lr = 0.001
+    momentum = 0.9
+    wd = 0.0001
+
+    train_ds = ImagenetteDataset(data_path, crop_size=112, train=True, augment=1) #return an original image and an augmented image
+    train_loader = torch.utils.data.DataLoader(train_ds,batch_size=batch_size, shuffle=True)
+
+    val_ds = ImagenetteDataset(data_path, crop_size=112, train=False, augment=0)
+    val_loader = torch.utils.data.DataLoader(val_ds, batch_size=batch_size, shuffle=False)    
+    
+    pretask = MOCO().to(device=device)
+    #load parameters
+    classifier = ImageClassifier(pretask_model=pretask)
+
+    losses = train_eval(classifier, train_loader, val_loader, epochs, lr, wd) #train loss, train acc, validation acc
+
+    #save losses logs and plot graph
+    for idx, name in enumerate(["train_loss", "train_accuracy", "validation_accuracy"]):
+        f = open(f"./results/{name}", "a")
+        f.write(json.dumps(losses[idx]))
+        f.close()
+        print_losses()
+
+
 
 
 if __name__ == '__main__':
-    main()
+    #main()
+    train_classifier()
