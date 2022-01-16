@@ -2,7 +2,9 @@
 ---
 Implementation of <a href='https://arxiv.org/pdf/1911.05722.pdf'>Momentum Contrast for Unsupervised Visual Representation Learning</a>
 
-##Dataset
+## Dataset
 <a href='https://github.com/fastai/imagenette'>Imagenette dataset</a>
+
+Results can be seen at report.pdf
 
 
