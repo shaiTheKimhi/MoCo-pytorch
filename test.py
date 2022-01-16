@@ -22,7 +22,7 @@ test = unittest.TestCase()
 
 print(device)
 
-dataset = datasetclass(r"C:\Users\Admin\Documents\Technion\Tutorials\Advance Deep Learning\hw\imagenette2", normalize=False, augment=1, num_augmentations = 2)
+dataset = datasetclass(r"C:\Users\Admin\Documents\Technion\Tutorials\Advance Deep Learning\hw\imagenette2", normalize=False, augment=1, num_augmentations = 2, crop_size=114)
 
 img = dataset[1500]
 

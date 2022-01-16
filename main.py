@@ -10,57 +10,55 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import os
+import json
+
 
 from dataset import ImagenetteDataset
 from moco_model import MOCO
+from image_clf import *
+
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 data_path = '../imagenette2/'
 #data_path = os.path.join('..','imagenette2','imagenette2')
 
-current_time = datetime.now().strftime("%H_%M_%S")
-res_path = './results/moco_' + current_time
-os.makedirs(res_path, exist_ok=True)
+#current_time = datetime.now().strftime("%H_%M_%S")
+res_path = './results/Moco'
+#os.makedirs(res_path, exist_ok=True)
 
-def main():
+def train_moco():
 
-    start_epoch,epochs =0, 10
-    print_every = 50
+    start_epoch,epochs = 0, 1000
+    print_every = 10
     q_size = 4096
-    batch_size = 256
+    batch_size = 256    
     contrast_momentum = 0.999
     # for gamble softmax
     T = 0.07
     # optimizer
     lr = 0.001
-    momentum = 0.9
     wd = 0.0001
 
-    # load ds, todo: put in diffrent function
-    #todo: check with defult crop_size(299)
     #moshe: if implement distributed training, remember to change shuffle...
 
-    train_ds = ImagenetteDataset(data_path, crop_size=112, train=True, augment=2)
+    train_ds = ImagenetteDataset(data_path, crop_size=112, train=True, augment=2, num_augmentations=2)
     train_loader = torch.utils.data.DataLoader(train_ds,batch_size=batch_size, shuffle=True)
-
-    mem_ds = ImagenetteDataset(data_path, crop_size=112, train=True, augment=0) #moshe: need augment=1? shai: this dataset is never used, why?
-    mem_loader = torch.utils.data.DataLoader(mem_ds, batch_size=batch_size, shuffle=False)
-
-    val_ds = ImagenetteDataset(data_path, crop_size=112, train=False, augment=0)
-    val_loader = torch.utils.data.DataLoader(val_ds, batch_size=batch_size, shuffle=False)
 
     # Model
     Q_enc = MOCO().to(device=device)
 
+    Q_enc.load_state_dict(torch.load('./moco_checkpoint_fq.pt', map_location=device)['model_state_dict']) #load model from file (only when exists) #TODO: remove this loadings when done training
+
     # Create K_enc and make sure not to track any gradient... note there is no optimizer but we don't even want to use
     # too much memory
-    K_enc = copy.deepcopy(Q_enc).to(device)
+    #K_enc = copy.deepcopy(Q_enc).to(device) #TODO: return this line and remove the two lines below
+    K_enc =  MOCO().to(device=device)
+    K_enc.load_state_dict(torch.load('./moco_checkpoint_fk.pt', map_location=device)['model_state_dict'])
     for param in K_enc.parameters():
         param.requires_grad = False
 
     # optimizers
-    # optimizer = torch.optim.SGD(f_q.parameters(), lr=lr, momentum=SGD_momentum, weight_decay=weight_decay)
     optimizer = torch.optim.Adam(Q_enc.parameters(), lr=lr, weight_decay=wd)
     #todo: add scedulare (LRSTep or CosineAniling...)
 
@@ -71,7 +69,7 @@ def main():
     queue = F.normalize(torch.randn(128, q_size), dim=0).to(device)
 
     #   log file
-    f = open(res_path + '/moco_log.txt', "a")
+    f = open(res_path + '/moco_log.txt', "a+")
 
     for epoch in range(start_epoch,epochs):
         # Training
@@ -117,7 +115,7 @@ def main():
 
         #   Save status
         epoch_log = "Epoch: "+str(epoch+1)+", Iter: "+str(i+1)+', Loss: '+str(loss.item())
-        if i % print_every ==0:
+        if (epoch+1) % print_every == 0:
             print(epoch_log)
         f.write(epoch_log + '\n')
 
@@ -145,14 +143,71 @@ def main():
     f.close()
     print_losses(loss_list)
 
-def print_losses(loss_list):
+
+
+def print_losses(loss_list, graph_name='moco_loss_path', ylab='Accuracy', path=res_path):
     plt.figure()
     plt.plot(np.array(loss_list))
-    plt.title('MoCo Training Loss')
+    plt.title(graph_name.replace('_',' '))
     plt.xlabel('Epoch')
-    plt.ylabel('Loss')
-    plt.savefig(res_path + '/moco_loss_graph.png')
+    plt.ylabel(ylab)
+    plt.savefig(res_path + '/' + graph_name +'.png')
 
+
+
+def train_classifier():
+    epochs = 100
+    batch_size = 32
+    # for gamble softmax
+    T = 0.07
+    # optimizer
+    lr = 0.001
+    momentum = 0.9
+    wd = 0.0001
+
+    train_ds = ImagenetteDataset(data_path, crop_size=288, train=True, augment=1, num_augmentations=3) #return an original image and an augmented image
+    train_loader = torch.utils.data.DataLoader(train_ds,batch_size=batch_size, shuffle=True)
+
+    val_ds = ImagenetteDataset(data_path, crop_size=288, train=False, augment=0)
+    val_loader = torch.utils.data.DataLoader(val_ds, batch_size=batch_size, shuffle=False)    
+
+    pretask = MOCO()
+    #load parameters
+    pretask.load_state_dict(torch.load('./moco_checkpoint_fq.pt', map_location=device)['model_state_dict'])
+    classifier = ImageClassifier(pretask_model=pretask).to(device)
+
+    losses = train_eval(classifier, train_loader, val_loader, epochs, lr, wd) #train loss, train acc, validation acc
+
+    #save losses logs and plot graph
+    for idx, name in enumerate(["train_loss", "train_accuracy", "validation_accuracy"]):
+        f = open(f"./results/{name}.txt", "w")
+        f.write(json.dumps(torch.tensor(losses[idx]).tolist()))
+        f.close()
+        print_losses(loss_list=losses[idx], graph_name=name, path="./results/")
+
+
+def analyze_classifier():
+    batch_size = 32
+    pretask = MOCO().to(device)
+    #load parameters
+    pretask.load_state_dict(torch.load('./moco_checkpoint_fq.pt', map_location=device)['model_state_dict'])
+    classifier = ImageClassifier(pretask_model=pretask).to(device)
+    classifier.predictor.load_state_dict(torch.load("./classifier.pt", map_location=device)["model_state_dict"])
+
+    val_ds = ImagenetteDataset(data_path, crop_size=288, train=False, augment=0)
+    val_loader = torch.utils.data.DataLoader(val_ds, batch_size=batch_size, shuffle=False)    
+
+    clf = nn.Sequential(nn.Linear(2048, 10, bias=True)).to(device)
+    clf.load_state_dict(torch.load("./classifier.pt", map_location=device)["model_state_dict"])
+    #losses = train_eval(nn.Sequential(pretask.backbone, clf), val_loader, val_loader, 20, 0.001, 0.0001) #train loss, train acc, validation acc
+
+    print_stats(nn.Sequential(pretask.backbone, clf), val_loader)
+
+    #present_accuracy(classifier, val_loader)
 
 if __name__ == '__main__':
-    main()
+    #train_moco()
+    #train_classifier()
+
+    analyze_classifier()
+    

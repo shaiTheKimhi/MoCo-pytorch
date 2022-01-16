@@ -17,7 +17,7 @@ class MOCO(nn.Module):
         """
         self.backbone.fc = nn.Identity()
         # MLP head
-        self.mlp_head = nn.Sequential(nn.Linear(2048, 512, bias=False), nn.BatchNorm1d(512),
+        self.mlp_head = nn.Sequential(nn.Linear(2048, 512, bias=False), nn.BatchNorm1d(512),   #Moco FC head (will be removed in the downstream task)
                                       nn.ReLU(inplace=True), nn.Linear(512, feature_dim, bias=True))
 
     def forward(self, x):
