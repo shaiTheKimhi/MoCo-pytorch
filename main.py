@@ -189,11 +189,6 @@ def train_classifier():
 
 def analyze_classifier(classifier):
     batch_size = 32
-    # pretask = MOCO().to(device)
-    # #load parameters
-    # pretask.load_state_dict(torch.load('./moco_checkpoint_fq.pt')['model_state_dict'])
-    # classifier = ImageClassifier(pretask_model=pretask).to(device)
-    # classifier.predictor.load_state_dict(torch.load("./classifier.pt", map_location=device)["model_state_dict"])
 
     val_ds = ImagenetteDataset(data_path, crop_size=288, train=False, augment=0)
     val_loader = torch.utils.data.DataLoader(val_ds, batch_size=batch_size, shuffle=False)    
